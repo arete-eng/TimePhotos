@@ -27,6 +27,7 @@ struct ContentView: View {
         case locations
         case database
         case insights
+        case chat
     }
     
     struct AlbumInfo: Identifiable {
@@ -90,7 +91,7 @@ struct ContentView: View {
     private var topTabBar: some View {
         HStack {
             // Year filter (only show on Photos, Album Names, and Locations tabs)
-            if viewMode != .database && viewMode != .insights {
+            if viewMode != .database && viewMode != .insights && viewMode != .chat {
                 HStack(spacing: 8) {
                     Button(action: { showYearFilter.toggle() }) {
                         HStack(spacing: 4) {
@@ -163,6 +164,15 @@ struct ContentView: View {
                     Text("Insights")
                         .font(.system(size: 13))
                         .foregroundColor(viewMode == .insights ? .primary : .secondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Button(action: { viewMode = .chat }) {
+                    Text("Chat")
+                        .font(.system(size: 13))
+                        .foregroundColor(viewMode == .chat ? .primary : .secondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                 }
@@ -245,6 +255,8 @@ struct ContentView: View {
                 DatabaseView(albums: allAlbums)
             } else if viewMode == .insights {
                 InsightsView(albums: albums)
+            } else if viewMode == .chat {
+                ChatView(albums: albums, allAlbums: allAlbums)
             } else {
                 ScrollView([.horizontal, .vertical]) {
                     Grid(alignment: .topLeading, horizontalSpacing: 10 * zoomLevel, verticalSpacing: 10 * zoomLevel) {
