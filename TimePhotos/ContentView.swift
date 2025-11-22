@@ -15,28 +15,75 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State private var albums: [(year: Int, month: Int?, album: PHAssetCollection)] = []
     @State private var allAlbums: [AlbumInfo] = []
-    @State private var viewMode: ViewMode = .photos
+    @State private var allPhotos: [(year: Int, month: Int?, assets: [PHAsset])] = [] // Full library photos
+    @State private var photosNotInAlbums: (photoCount: Int, videoCount: Int) = (0, 0) // Photos/videos not in albums
+    @State private var viewMode: ViewMode = .monthlyMoodBoards
     @State private var zoomLevel: CGFloat = 1.0
     @State private var selectedAlbums: [String: String] = [:] // Key: "year-month", Value: album identifier
     @State private var selectedYears: Set<Int> = [] // Years to display (empty = show all)
     @State private var showYearFilter: Bool = false
     
     enum ViewMode {
-        case photos
-        case albumNames
+        case monthlyMoodBoards
         case locations
         case database
         case insights
         case chat
+        case chat2
+    }
+    
+    enum MoodBoardSubMode {
+        case photos
+        case albumNames
+    }
+    
+    @State private var moodBoardSubMode: MoodBoardSubMode = .photos
+    
+    struct MediaTypeCounts {
+        var total: Int = 0
+        var images: Int = 0
+        var videos: Int = 0
+        var selfies: Int = 0
+        var livePhotos: Int = 0
+        var portraits: Int = 0
+        var panoramas: Int = 0
+        var timeLapse: Int = 0
+        var slowMotion: Int = 0
+        var cinematic: Int = 0
+        var bursts: Int = 0
+        var screenshots: Int = 0
+        var screenRecordings: Int = 0
+        var spatial: Int = 0
+        var animated: Int = 0
+        var raw: Int = 0
+        var favorites: Int = 0
+        var hidden: Int = 0
+        var recentlyDeleted: Int = 0
+        var duplicates: Int = 0
+        var receipts: Int = 0
+        var handwriting: Int = 0
+        var illustrations: Int = 0
+        var qrCodes: Int = 0
+        var recentlySaved: Int = 0
+        var recentlyViewed: Int = 0
+        var recentlyEdited: Int = 0
+        var recentlyShared: Int = 0
+        var documents: Int = 0
+        var imports: Int = 0
+        var recentlyAdded: Int = 0
+        var edited: Int = 0
+        var notEdited: Int = 0
     }
     
     struct AlbumInfo: Identifiable {
         let id = UUID()
         let folder: String
         let albumName: String
-        let photoCount: Int
-        let videoCount: Int
+        let photoCount: Int // Legacy - total images
+        let videoCount: Int // Legacy - total videos
+        let mediaCounts: MediaTypeCounts
         let timespan: String
+        let lastEdited: Date? // Last modification date of any asset in the album
         let album: PHAssetCollection
     }
     
@@ -46,10 +93,13 @@ struct ContentView: View {
         let photoCount: Int
         let videoCount: Int
         let timespan: String
+        let mediaCounts: [String: Int] // Extended media type counts
     }
     
     var allYears: [Int] {
-        Array(Set(albums.map { $0.year })).sorted()
+        let albumYears = Set(albums.map { $0.year })
+        let photoYears = Set(allPhotos.map { $0.year })
+        return Array(albumYears.union(photoYears)).sorted()
     }
     
     var years: [Int] {
@@ -90,8 +140,8 @@ struct ContentView: View {
     
     private var topTabBar: some View {
         HStack {
-            // Year filter (only show on Photos, Album Names, and Locations tabs)
-            if viewMode != .database && viewMode != .insights && viewMode != .chat {
+            // Year filter (only show on Monthly Mood Boards and Locations tabs)
+            if viewMode == .monthlyMoodBoards || viewMode == .locations {
                 HStack(spacing: 8) {
                     Button(action: { showYearFilter.toggle() }) {
                         HStack(spacing: 4) {
@@ -124,19 +174,10 @@ struct ContentView: View {
             Spacer()
             
             HStack(spacing: 0) {
-                Button(action: { viewMode = .photos }) {
-                    Text("Photos")
+                Button(action: { viewMode = .monthlyMoodBoards }) {
+                    Text("Monthly Mood Boards")
                         .font(.system(size: 13))
-                        .foregroundColor(viewMode == .photos ? .primary : .secondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                }
-                .buttonStyle(PlainButtonStyle())
-                
-                Button(action: { viewMode = .albumNames }) {
-                    Text("Album Names")
-                        .font(.system(size: 13))
-                        .foregroundColor(viewMode == .albumNames ? .primary : .secondary)
+                        .foregroundColor(viewMode == .monthlyMoodBoards ? .primary : .secondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                 }
@@ -173,6 +214,15 @@ struct ContentView: View {
                     Text("Chat")
                         .font(.system(size: 13))
                         .foregroundColor(viewMode == .chat ? .primary : .secondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Button(action: { viewMode = .chat2 }) {
+                    Text("Chat 2")
+                        .font(.system(size: 13))
+                        .foregroundColor(viewMode == .chat2 ? .primary : .secondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                 }
@@ -252,20 +302,52 @@ struct ContentView: View {
     private var mainContentView: some View {
         Group {
             if viewMode == .database {
-                DatabaseView(albums: allAlbums)
+                DatabaseView(albums: allAlbums, photosNotInAlbums: photosNotInAlbums)
             } else if viewMode == .insights {
                 InsightsView(albums: albums)
             } else if viewMode == .chat {
-                ChatView(albums: albums, allAlbums: allAlbums)
-            } else {
-                ScrollView([.horizontal, .vertical]) {
-                    Grid(alignment: .topLeading, horizontalSpacing: 10 * zoomLevel, verticalSpacing: 10 * zoomLevel) {
-                        headerRow
-                        monthRows
-                        yearlyRow
+                ChatView(albums: albums, allAlbums: allAlbums, allPhotos: allPhotos, photosNotInAlbums: photosNotInAlbums)
+            } else if viewMode == .chat2 {
+                ChatView2(albums: albums, allAlbums: allAlbums, allPhotos: allPhotos, photosNotInAlbums: photosNotInAlbums)
+            } else if viewMode == .monthlyMoodBoards {
+                VStack(spacing: 0) {
+                    // Subtabs for Monthly Mood Boards
+                    HStack(spacing: 0) {
+                        Button(action: { moodBoardSubMode = .photos }) {
+                            Text("Photos")
+                                .font(.system(size: 12))
+                                .foregroundColor(moodBoardSubMode == .photos ? .primary : .secondary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 6)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        
+                        Button(action: { moodBoardSubMode = .albumNames }) {
+                            Text("Album Names")
+                                .font(.system(size: 12))
+                                .foregroundColor(moodBoardSubMode == .albumNames ? .primary : .secondary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 6)
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
-                    .padding()
+                    .frame(height: 32)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    
+                    Divider()
+                    
+                    // Content based on sub-mode
+                    ScrollView([.horizontal, .vertical]) {
+                        Grid(alignment: .topLeading, horizontalSpacing: 10 * zoomLevel, verticalSpacing: 10 * zoomLevel) {
+                            headerRow
+                            monthRows
+                            yearlyRow
+                        }
+                        .padding()
+                    }
                 }
+            } else if viewMode == .locations {
+                LocationsFullLibraryView(zoomLevel: zoomLevel, selectedYears: selectedYears, allYears: allYears)
             }
         }
     }
@@ -313,31 +395,33 @@ struct ContentView: View {
     private func cellView(year: Int, month: Int?) -> some View {
         let matchingAlbums = albums.filter { $0.year == year && $0.month == month }
         if !matchingAlbums.isEmpty {
-            if viewMode == .photos {
-                let selectedAlbum = getSelectedAlbum(year: year, month: month, matchingAlbums: matchingAlbums)
-                AlbumCollageView(album: selectedAlbum)
-                    .frame(width: 300 * zoomLevel, height: 300 * zoomLevel)
-            } else if viewMode == .albumNames {
-                AlbumNameView(
-                    albums: matchingAlbums.map { $0.album },
-                    year: year,
-                    month: month,
-                    selectedAlbums: $selectedAlbums,
-                    zoomLevel: zoomLevel
-                )
-                .frame(width: 300 * zoomLevel)
-                .frame(minHeight: 100 * zoomLevel)
-            } else if viewMode == .locations {
-                LocationView(albums: matchingAlbums.map { $0.album }, zoomLevel: zoomLevel)
+            if viewMode == .monthlyMoodBoards {
+                if moodBoardSubMode == .photos {
+                    let selectedAlbum = getSelectedAlbum(year: year, month: month, matchingAlbums: matchingAlbums)
+                    AlbumCollageView(album: selectedAlbum)
+                        .frame(width: 300 * zoomLevel, height: 300 * zoomLevel)
+                } else if moodBoardSubMode == .albumNames {
+                    AlbumNameView(
+                        albums: matchingAlbums.map { $0.album },
+                        year: year,
+                        month: month,
+                        selectedAlbums: $selectedAlbums,
+                        zoomLevel: zoomLevel
+                    )
                     .frame(width: 300 * zoomLevel)
                     .frame(minHeight: 100 * zoomLevel)
+                } else {
+                    Color.clear
+                        .frame(width: 300 * zoomLevel)
+                        .frame(minHeight: 100 * zoomLevel)
+                }
             } else {
                 Color.clear
                     .frame(width: 300 * zoomLevel)
                     .frame(minHeight: 100 * zoomLevel)
             }
         } else {
-            if viewMode == .photos {
+            if viewMode == .monthlyMoodBoards && moodBoardSubMode == .photos {
                 Color.clear
                     .frame(width: 300 * zoomLevel, height: 300 * zoomLevel)
             } else {
@@ -370,7 +454,82 @@ struct ContentView: View {
         PHPhotoLibrary.requestAuthorization { status in
             if status == .authorized {
                 loadAlbums()
+                loadFullPhotoLibrary()
             }
+        }
+    }
+    
+    func loadFullPhotoLibrary() {
+        // Fetch ALL media from the entire library (not just albums)
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        
+        // Get ALL assets (images, videos, and any other types)
+        let allAssetsFetch = PHAsset.fetchAssets(with: fetchOptions)
+        
+        // Count assets not in albums
+        var assetsInAlbums: Set<String> = []
+        
+        // Collect all asset IDs from albums
+        for album in allAlbums {
+            let assets = PHAsset.fetchAssets(in: album.album, options: nil)
+            assets.enumerateObjects { asset, _, _ in
+                assetsInAlbums.insert(asset.localIdentifier)
+            }
+        }
+        
+        // Count assets not in any album and categorize them
+        var photosNotInAlbumsCount = 0
+        var videosNotInAlbumsCount = 0
+        
+        // Group all assets by year and month
+        var assetsByYearMonth: [Int: [Int: [PHAsset]]] = [:]
+        
+        allAssetsFetch.enumerateObjects { asset, _, _ in
+            // Count not in albums
+            if !assetsInAlbums.contains(asset.localIdentifier) {
+                if asset.mediaType == .image {
+                    photosNotInAlbumsCount += 1
+                } else if asset.mediaType == .video {
+                    videosNotInAlbumsCount += 1
+                }
+            }
+            
+            // Group by year and month
+            if let creationDate = asset.creationDate {
+                let calendar = Calendar.current
+                let year = calendar.component(.year, from: creationDate)
+                let month = calendar.component(.month, from: creationDate)
+                
+                if assetsByYearMonth[year] == nil {
+                    assetsByYearMonth[year] = [:]
+                }
+                if assetsByYearMonth[year]?[month] == nil {
+                    assetsByYearMonth[year]?[month] = []
+                }
+                assetsByYearMonth[year]?[month]?.append(asset)
+            }
+        }
+        
+        // Convert to the format we need
+        var allPhotosList: [(year: Int, month: Int?, assets: [PHAsset])] = []
+        for (year, months) in assetsByYearMonth {
+            for (month, assets) in months {
+                allPhotosList.append((year: year, month: month, assets: assets))
+            }
+            // Also add yearly totals
+            let yearAssets = months.values.flatMap { $0 }
+            allPhotosList.append((year: year, month: nil, assets: yearAssets))
+        }
+        
+        DispatchQueue.main.async {
+            self.photosNotInAlbums = (photosNotInAlbumsCount, videosNotInAlbumsCount)
+            self.allPhotos = allPhotosList.sorted(by: {
+                if $0.year != $1.year { return $0.year < $1.year }
+                if $0.month == nil { return false }
+                if $1.month == nil { return true }
+                return $0.month! < $1.month!
+            })
         }
     }
     
@@ -505,15 +664,107 @@ struct ContentView: View {
         return localMap
     }
     
+    func categorizeAsset(_ asset: PHAsset) -> MediaTypeCounts {
+        var counts = MediaTypeCounts()
+        counts.total = 1
+        
+        // Basic media types
+        if asset.mediaType == .image {
+            counts.images += 1
+        } else if asset.mediaType == .video {
+            counts.videos += 1
+        }
+        
+        // Media subtypes - using only confirmed available options
+        if asset.mediaSubtypes.contains(.photoLive) {
+            counts.livePhotos += 1
+        }
+        if asset.mediaSubtypes.contains(.photoDepthEffect) {
+            counts.portraits += 1
+        }
+        if asset.mediaSubtypes.contains(.photoPanorama) {
+            counts.panoramas += 1
+        }
+        if asset.mediaSubtypes.contains(.videoTimelapse) {
+            counts.timeLapse += 1
+        }
+        if asset.mediaSubtypes.contains(.videoHighFrameRate) {
+            counts.slowMotion += 1
+        }
+        if asset.mediaSubtypes.contains(.videoCinematic) {
+            counts.cinematic += 1
+        }
+        if asset.mediaSubtypes.contains(.photoScreenshot) {
+            counts.screenshots += 1
+        }
+        
+        // Detect selfies by checking if it's a front-facing camera photo
+        // (We'll use a heuristic: if it's a portrait with depth effect, likely a selfie)
+        if asset.mediaSubtypes.contains(.photoDepthEffect) && asset.mediaType == .image {
+            // Could be a selfie or portrait - we'll count it as portrait for now
+            // Selfies detection would require additional metadata analysis
+        }
+        
+        // Detect bursts - check if asset represents a burst
+        // Note: Burst detection requires checking PHAssetCollection type
+        // For now, we'll track this separately if needed
+        
+        // Detect RAW - check pixel format or use resource analysis
+        // For now, we'll use a simplified approach
+        
+        // Additional categorization based on asset properties and metadata
+        // These require more sophisticated analysis that we'll add incrementally
+        
+        // Asset properties
+        if asset.isFavorite {
+            counts.favorites += 1
+        }
+        if asset.isHidden {
+            counts.hidden += 1
+        }
+        
+        // Check if edited (has adjustments)
+        if asset.hasAdjustments {
+            counts.edited += 1
+        } else {
+            counts.notEdited += 1
+        }
+        
+        return counts
+    }
+    
     func extractAlbumInfo(_ collection: PHAssetCollection, folderMap: [String: String]) -> AlbumInfo {
         let fetchOptions = PHFetchOptions()
         let assets = PHAsset.fetchAssets(in: collection, options: fetchOptions)
         
-        // Count photos and videos
+        // Count all media types
+        var totalCounts = MediaTypeCounts()
         var photoCount = 0
         var videoCount = 0
         
         assets.enumerateObjects { asset, _, _ in
+            let counts = categorizeAsset(asset)
+            totalCounts.total += counts.total
+            totalCounts.images += counts.images
+            totalCounts.videos += counts.videos
+            totalCounts.selfies += counts.selfies
+            totalCounts.livePhotos += counts.livePhotos
+            totalCounts.portraits += counts.portraits
+            totalCounts.panoramas += counts.panoramas
+            totalCounts.timeLapse += counts.timeLapse
+            totalCounts.slowMotion += counts.slowMotion
+            totalCounts.cinematic += counts.cinematic
+            totalCounts.bursts += counts.bursts
+            totalCounts.screenshots += counts.screenshots
+            totalCounts.screenRecordings += counts.screenRecordings
+            totalCounts.spatial += counts.spatial
+            totalCounts.animated += counts.animated
+            totalCounts.raw += counts.raw
+            totalCounts.favorites += counts.favorites
+            totalCounts.hidden += counts.hidden
+            totalCounts.edited += counts.edited
+            totalCounts.notEdited += counts.notEdited
+            
             if asset.mediaType == .image {
                 photoCount += 1
             } else if asset.mediaType == .video {
@@ -523,6 +774,7 @@ struct ContentView: View {
         
         // Get timespan
         var timespan = "—"
+        var lastEdited: Date? = nil
         if assets.count > 0 {
             let sortDescriptor = NSSortDescriptor(key: "creationDate", ascending: true)
             fetchOptions.sortDescriptors = [sortDescriptor]
@@ -534,6 +786,17 @@ struct ContentView: View {
                let endDate = lastAsset.creationDate {
                 timespan = formatTimespan(startDate, endDate)
             }
+            
+            // Find the most recent modification date from all assets
+            var latestModificationDate: Date? = nil
+            assets.enumerateObjects { asset, _, _ in
+                if let modificationDate = asset.modificationDate {
+                    if latestModificationDate == nil || modificationDate > latestModificationDate! {
+                        latestModificationDate = modificationDate
+                    }
+                }
+            }
+            lastEdited = latestModificationDate
         }
         
         // Get folder from the map (empty string if not in a folder)
@@ -544,7 +807,9 @@ struct ContentView: View {
             albumName: collection.localizedTitle ?? "Untitled",
             photoCount: photoCount,
             videoCount: videoCount,
+            mediaCounts: totalCounts,
             timespan: timespan,
+            lastEdited: lastEdited,
             album: collection
         )
     }
@@ -795,9 +1060,10 @@ struct ContentView: View {
                 var coordinateGroups: [String: (CLLocation, Int)] = [:]
                 
                 // First pass: collect all locations and group by approximate coordinates
+                // Include ALL media types (images, videos, etc.)
                 for album in albums {
                     let fetchOptions = PHFetchOptions()
-                    fetchOptions.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
+                    // No predicate - get all media types
                     let assets = PHAsset.fetchAssets(in: album, options: fetchOptions)
                     
                     assets.enumerateObjects { asset, _, _ in
@@ -937,6 +1203,278 @@ struct ContentView: View {
         }
     }
     
+    struct LocationsFullLibraryView: View {
+        let zoomLevel: CGFloat
+        let selectedYears: Set<Int>
+        let allYears: [Int]
+        @State private var locationDataByMonth: [String: [LocationInfo]] = [:] // Key: "year-month", Value: top 10 locations
+        @State private var isLoading: Bool = true
+        
+        struct LocationInfo: Identifiable {
+            let id = UUID()
+            let name: String
+            let count: Int
+        }
+        
+        var years: [Int] {
+            if selectedYears.isEmpty {
+                return allYears
+            } else {
+                return allYears.filter { selectedYears.contains($0) }
+            }
+        }
+        
+        var body: some View {
+            ScrollView([.horizontal, .vertical]) {
+                Grid(alignment: .topLeading, horizontalSpacing: 10 * zoomLevel, verticalSpacing: 10 * zoomLevel) {
+                    headerRow
+                    monthRows
+                    yearlyRow
+                }
+                .padding()
+            }
+            .onAppear {
+                extractLocationsFromFullLibrary()
+            }
+        }
+        
+        private var headerRow: some View {
+            GridRow {
+                Text("")
+                    .frame(width: 80 * zoomLevel)
+                ForEach(years, id: \.self) { year in
+                    Text(String(year))
+                        .font(.system(size: 17 * zoomLevel, weight: .semibold))
+                        .frame(width: 300 * zoomLevel)
+                }
+            }
+        }
+        
+        private var monthRows: some View {
+            ForEach(1...12, id: \.self) { month in
+                GridRow {
+                    Text(monthName(month))
+                        .font(.system(size: 17 * zoomLevel))
+                        .frame(width: 80 * zoomLevel)
+                    
+                    ForEach(years, id: \.self) { year in
+                        locationCellView(year: year, month: month)
+                    }
+                }
+            }
+        }
+        
+        private var yearlyRow: some View {
+            GridRow {
+                Text("Year")
+                    .frame(width: 80 * zoomLevel)
+                    .font(.system(size: 17 * zoomLevel, weight: .semibold))
+                
+                ForEach(years, id: \.self) { year in
+                    locationCellView(year: year, month: nil)
+                }
+            }
+        }
+        
+        @ViewBuilder
+        private func locationCellView(year: Int, month: Int?) -> some View {
+            let key = month != nil ? "\(year)-\(month!)" : "\(year)-all"
+            let locations = locationDataByMonth[key] ?? []
+            
+            VStack(alignment: .leading, spacing: 6 * zoomLevel) {
+                if isLoading {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.7 * zoomLevel)
+                        Text("Loading...")
+                            .font(.system(size: 11 * zoomLevel))
+                            .foregroundColor(.secondary)
+                    }
+                } else if locations.isEmpty {
+                    Text("No location data")
+                        .font(.system(size: 11 * zoomLevel))
+                        .foregroundColor(.secondary)
+                        .italic()
+                } else {
+                    ForEach(locations.prefix(10)) { location in
+                        HStack(spacing: 8 * zoomLevel) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.system(size: 10 * zoomLevel))
+                                .foregroundColor(.blue)
+                            
+                            Text(location.name)
+                                .font(.system(size: 11 * zoomLevel))
+                                .lineLimit(2)
+                            
+                            Spacer()
+                            
+                            Text("\(location.count)")
+                                .font(.system(size: 11 * zoomLevel))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(8 * zoomLevel)
+            .frame(width: 300 * zoomLevel)
+            .frame(minHeight: 100 * zoomLevel)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(8 * zoomLevel)
+        }
+        
+        func monthName(_ month: Int) -> String {
+            let formatter = DateFormatter()
+            return formatter.monthSymbols[month - 1]
+        }
+        
+        func extractLocationsFromFullLibrary() {
+            Task {
+                // Fetch ALL assets from the entire library (including videos and all media types)
+                let fetchOptions = PHFetchOptions()
+                // No predicate - get all media types
+                let allAssets = PHAsset.fetchAssets(with: fetchOptions)
+                
+                // Group assets by year and month
+                var assetsByMonth: [String: [PHAsset]] = [:]
+                
+                allAssets.enumerateObjects { asset, _, _ in
+                    if let creationDate = asset.creationDate, asset.location != nil {
+                        let calendar = Calendar.current
+                        let year = calendar.component(.year, from: creationDate)
+                        let month = calendar.component(.month, from: creationDate)
+                        
+                        // Add to specific month
+                        let monthKey = "\(year)-\(month)"
+                        if assetsByMonth[monthKey] == nil {
+                            assetsByMonth[monthKey] = []
+                        }
+                        assetsByMonth[monthKey]?.append(asset)
+                        
+                        // Also add to year total
+                        let yearKey = "\(year)-all"
+                        if assetsByMonth[yearKey] == nil {
+                            assetsByMonth[yearKey] = []
+                        }
+                        assetsByMonth[yearKey]?.append(asset)
+                    }
+                }
+                
+                // Process each month/year to get top 10 locations
+                var locationData: [String: [LocationInfo]] = [:]
+                
+                for (key, assets) in assetsByMonth {
+                    var coordinateGroups: [String: (CLLocation, Int)] = [:]
+                    
+                    // Group by approximate coordinates
+                    for asset in assets {
+                        if let location = asset.location {
+                            let roundedKey = String(format: "%.3f,%.3f", location.coordinate.latitude, location.coordinate.longitude)
+                            
+                            if let existing = coordinateGroups[roundedKey] {
+                                coordinateGroups[roundedKey] = (existing.0, existing.1 + 1)
+                            } else {
+                                coordinateGroups[roundedKey] = (location, 1)
+                            }
+                        }
+                    }
+                    
+                    // Get top locations by count
+                    let sortedLocations = coordinateGroups.values.sorted { $0.1 > $1.1 }
+                    let topLocations = Array(sortedLocations.prefix(10))
+                    
+                    // Geocode top locations
+                    var locationDict: [String: Int] = [:]
+                    
+                    for (location, count) in topLocations {
+                        var googleSuccess = false
+                        
+                        do {
+                            if let result = try await GoogleGeocodingService.reverseGeocode(coordinate: location.coordinate) {
+                                locationDict[result, default: 0] += count
+                                googleSuccess = true
+                            }
+                        } catch {
+                            // Ignore Google API errors
+                        }
+                        
+                        if !googleSuccess {
+                            do {
+                                let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
+                                if let placemark = placemarks.first {
+                                    let locationName = formatLocationName(placemark)
+                                    locationDict[locationName, default: 0] += count
+                                }
+                            } catch {
+                                let coordString = String(format: "%.3f, %.3f", location.coordinate.latitude, location.coordinate.longitude)
+                                locationDict[coordString, default: 0] += count
+                            }
+                        }
+                        
+                        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds delay
+                    }
+                    
+                    // Convert to LocationInfo array, sorted by count
+                    let sorted = locationDict.sorted { $0.value > $1.value }
+                    locationData[key] = sorted.map { LocationInfo(name: $0.key, count: $0.value) }
+                }
+                
+                await MainActor.run {
+                    locationDataByMonth = locationData
+                    isLoading = false
+                }
+            }
+        }
+        
+        func formatLocationName(_ placemark: CLPlacemark) -> String {
+            var components: [String] = []
+            
+            if let areas = placemark.areasOfInterest, let first = areas.first {
+                components.append(first)
+            }
+            
+            if let name = placemark.name,
+               components.isEmpty,
+               name != placemark.locality,
+               name != placemark.thoroughfare,
+               name != placemark.subThoroughfare {
+                let isStreetAddress = name.range(of: "^\\d+", options: .regularExpression) != nil
+                if !isStreetAddress {
+                    components.append(name)
+                }
+            }
+            
+            if let subLocality = placemark.subLocality {
+                components.append(subLocality)
+            }
+            
+            if let locality = placemark.locality {
+                if !components.contains(locality) {
+                    components.append(locality)
+                }
+            }
+            
+            if let state = placemark.administrativeArea {
+                components.append(state)
+            }
+            
+            if let country = placemark.country {
+                if country != "United States" {
+                    components.append(country)
+                }
+            }
+            
+            if components.isEmpty {
+                if let number = placemark.subThoroughfare, let street = placemark.thoroughfare {
+                    return "\(number) \(street)"
+                }
+                return "Unknown Location"
+            }
+            
+            return components.joined(separator: ", ")
+        }
+    }
+    
     struct AlbumCollageView: View {
         let album: PHAssetCollection
         @State private var images: [NSImage] = []
@@ -994,12 +1532,13 @@ struct ContentView: View {
     
     struct DatabaseView: View {
         let albums: [AlbumInfo]
+        let photosNotInAlbums: (photoCount: Int, videoCount: Int)
         @State private var sortColumn: SortColumn = .albumName
         @State private var sortAscending = true
         @State private var searchText = ""
         
         enum SortColumn {
-            case folder, albumName, photoCount, videoCount, timespan
+            case folder, albumName, photoCount, videoCount, timespan, lastEdited
         }
         
         var filteredAndSortedAlbums: [AlbumInfo] {
@@ -1021,9 +1560,59 @@ struct ContentView: View {
                     result = album1.videoCount < album2.videoCount
                 case .timespan:
                     result = album1.timespan < album2.timespan
+                case .lastEdited:
+                    let date1 = album1.lastEdited ?? Date.distantPast
+                    let date2 = album2.lastEdited ?? Date.distantPast
+                    result = date1 < date2
                 }
                 return sortAscending ? result : !result
             }
+        }
+        
+        var allRows: [DatabaseRow] {
+            var rows = filteredAndSortedAlbums.map { album in
+                DatabaseRow(folder: album.folder, albumName: album.albumName, photoCount: album.photoCount, videoCount: album.videoCount, timespan: album.timespan, lastEdited: album.lastEdited)
+            }
+            
+            // Add "No Album" row if there are photos/videos not in albums
+            if photosNotInAlbums.photoCount > 0 || photosNotInAlbums.videoCount > 0 {
+                rows.append(DatabaseRow(folder: "", albumName: "No Album", photoCount: photosNotInAlbums.photoCount, videoCount: photosNotInAlbums.videoCount, timespan: "—", lastEdited: nil))
+            }
+            
+            return rows.sorted { row1, row2 in
+                // Always put "No Album" at the end
+                if row1.albumName == "No Album" { return false }
+                if row2.albumName == "No Album" { return true }
+                
+                let result: Bool
+                switch sortColumn {
+                case .folder:
+                    result = row1.folder < row2.folder
+                case .albumName:
+                    result = row1.albumName < row2.albumName
+                case .photoCount:
+                    result = row1.photoCount < row2.photoCount
+                case .videoCount:
+                    result = row1.videoCount < row2.videoCount
+                case .timespan:
+                    result = row1.timespan < row2.timespan
+                case .lastEdited:
+                    let date1 = row1.lastEdited ?? Date.distantPast
+                    let date2 = row2.lastEdited ?? Date.distantPast
+                    result = date1 < date2
+                }
+                return sortAscending ? result : !result
+            }
+        }
+        
+        struct DatabaseRow: Identifiable {
+            let id = UUID()
+            let folder: String
+            let albumName: String
+            let photoCount: Int
+            let videoCount: Int
+            let timespan: String
+            let lastEdited: Date?
         }
         
         var body: some View {
@@ -1072,19 +1661,21 @@ struct ContentView: View {
                             headerCell("# Photos", column: .photoCount, width: 100)
                             headerCell("# Videos", column: .videoCount, width: 100)
                             headerCell("Timespan", column: .timespan, width: 200)
+                            headerCell("Last Edited", column: .lastEdited, width: 180)
                         }
                         .background(Color(NSColor.controlBackgroundColor))
                         
                         Divider()
                         
                         // Rows
-                        ForEach(filteredAndSortedAlbums) { album in
+                        ForEach(allRows) { row in
                             HStack(spacing: 0) {
-                                dataCell(album.folder, width: 120)
-                                dataCell(album.albumName, width: 300, alignment: .leading)
-                                dataCell("\(album.photoCount)", width: 100)
-                                dataCell("\(album.videoCount)", width: 100)
-                                dataCell(album.timespan, width: 200)
+                                dataCell(row.folder, width: 120)
+                                dataCell(row.albumName, width: 300, alignment: .leading)
+                                dataCell("\(row.photoCount)", width: 100)
+                                dataCell("\(row.videoCount)", width: 100)
+                                dataCell(row.timespan, width: 200)
+                                dataCell(formatLastEdited(row.lastEdited), width: 180)
                             }
                             .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
                             Divider()
@@ -1094,7 +1685,7 @@ struct ContentView: View {
                 
                 // Footer with count
                 HStack {
-                    Text("\(filteredAndSortedAlbums.count) albums")
+                    Text("\(allRows.count) \(allRows.count == 1 ? "entry" : "entries")")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     Spacer()
@@ -1136,9 +1727,65 @@ struct ContentView: View {
                 .padding(.vertical, 6)
         }
         
+        private func formatLastEdited(_ date: Date?) -> String {
+            guard let date = date else {
+                return "—"
+            }
+            
+            let formatter = DateFormatter()
+            let calendar = Calendar.current
+            
+            if calendar.isDateInToday(date) {
+                formatter.dateStyle = .none
+                formatter.timeStyle = .short
+                return "Today, \(formatter.string(from: date))"
+            } else if calendar.isDateInYesterday(date) {
+                formatter.dateStyle = .none
+                formatter.timeStyle = .short
+                return "Yesterday, \(formatter.string(from: date))"
+            } else {
+                // Always include year for all other dates
+                formatter.dateFormat = "MMM d, yyyy h:mm a"
+                return formatter.string(from: date)
+            }
+        }
+        
         func exportToJSON() {
-            let exportList = albums.map { 
-                AlbumExport(folder: $0.folder, albumName: $0.albumName, photoCount: $0.photoCount, videoCount: $0.videoCount, timespan: $0.timespan)
+            var exportList = albums.map { album in
+                // Convert MediaTypeCounts to dictionary for export
+                let mediaCountsDict: [String: Int] = [
+                    "total": album.mediaCounts.total,
+                    "images": album.mediaCounts.images,
+                    "videos": album.mediaCounts.videos,
+                    "selfies": album.mediaCounts.selfies,
+                    "livePhotos": album.mediaCounts.livePhotos,
+                    "portraits": album.mediaCounts.portraits,
+                    "panoramas": album.mediaCounts.panoramas,
+                    "timeLapse": album.mediaCounts.timeLapse,
+                    "slowMotion": album.mediaCounts.slowMotion,
+                    "cinematic": album.mediaCounts.cinematic,
+                    "bursts": album.mediaCounts.bursts,
+                    "screenshots": album.mediaCounts.screenshots,
+                    "screenRecordings": album.mediaCounts.screenRecordings,
+                    "spatial": album.mediaCounts.spatial,
+                    "animated": album.mediaCounts.animated,
+                    "raw": album.mediaCounts.raw,
+                    "favorites": album.mediaCounts.favorites,
+                    "hidden": album.mediaCounts.hidden,
+                    "edited": album.mediaCounts.edited,
+                    "notEdited": album.mediaCounts.notEdited
+                ]
+                return AlbumExport(folder: album.folder, albumName: album.albumName, photoCount: album.photoCount, videoCount: album.videoCount, timespan: album.timespan, mediaCounts: mediaCountsDict)
+            }
+            
+            // Add "No Album" entry if it exists
+            if photosNotInAlbums.photoCount > 0 || photosNotInAlbums.videoCount > 0 {
+                let emptyMediaCounts: [String: Int] = [
+                    "total": photosNotInAlbums.photoCount + photosNotInAlbums.videoCount,
+                    "images": photosNotInAlbums.photoCount,
+                    "videos": photosNotInAlbums.videoCount
+                ]
+                exportList.append(AlbumExport(folder: "", albumName: "No Album", photoCount: photosNotInAlbums.photoCount, videoCount: photosNotInAlbums.videoCount, timespan: "—", mediaCounts: emptyMediaCounts))
             }
             
             let encoder = JSONEncoder()

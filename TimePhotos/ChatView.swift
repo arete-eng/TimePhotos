@@ -13,8 +13,8 @@ struct ChatView: View {
     @State private var inputText: String = ""
     @FocusState private var isInputFocused: Bool
     
-    init(albums: [(year: Int, month: Int?, album: PHAssetCollection)], allAlbums: [ContentView.AlbumInfo]) {
-        _aiService = StateObject(wrappedValue: PhotoLibraryAI(albums: albums, allAlbums: allAlbums))
+    init(albums: [(year: Int, month: Int?, album: PHAssetCollection)], allAlbums: [ContentView.AlbumInfo], allPhotos: [(year: Int, month: Int?, assets: [PHAsset])], photosNotInAlbums: (photoCount: Int, videoCount: Int)) {
+        _aiService = StateObject(wrappedValue: PhotoLibraryAI(albums: albums, allAlbums: allAlbums, allPhotos: allPhotos, photosNotInAlbums: photosNotInAlbums))
     }
     
     var body: some View {
@@ -38,7 +38,7 @@ struct ChatView: View {
                     }
                     .padding()
                 }
-                .onChange(of: aiService.messages.count) { _ in
+                .onChange(of: aiService.messages.count) {
                     if let lastMessage = aiService.messages.last {
                         withAnimation {
                             proxy.scrollTo(lastMessage.id, anchor: .bottom)
