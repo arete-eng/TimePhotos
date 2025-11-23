@@ -52,7 +52,7 @@ struct ChatView2: View {
             
             Divider()
             
-            // Messages area
+            // Messages area - selectable
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
@@ -60,7 +60,7 @@ struct ChatView2: View {
                             welcomeMessage
                         } else {
                             ForEach(aiService.messages) { message in
-                                MessageBubble(message: message)
+                                MessageBubble2(message: message)
                                     .id(message.id)
                             }
                             
@@ -71,6 +71,7 @@ struct ChatView2: View {
                     }
                     .padding()
                 }
+                .textSelection(.enabled)
                 .onChange(of: aiService.messages.count) {
                     if let lastMessage = aiService.messages.last {
                         withAnimation {
@@ -118,21 +119,25 @@ struct ChatView2: View {
             
             Text("Chat with Your Photo Library (OpenAI)")
                 .font(.system(size: 24, weight: .bold))
+                .textSelection(.enabled)
             
             Text("Ask me anything about your photos using OpenAI's GPT-4")
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .textSelection(.enabled)
             
             if aiService.apiKey.isEmpty {
                 VStack(spacing: 12) {
                     Text("⚠️ API Key Required")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.orange)
+                        .textSelection(.enabled)
                     
                     Text("Please set your OpenAI API key to start chatting")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
+                        .textSelection(.enabled)
                     
                     Button(action: { showAPIKeySettings = true }) {
                         Text("Set API Key")
@@ -153,6 +158,7 @@ struct ChatView2: View {
                     Text("Try asking:")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
+                        .textSelection(.enabled)
                     
                     suggestionButton("How many photos do I have?")
                     suggestionButton("What albums do I have from 2023?")
@@ -225,6 +231,94 @@ struct ChatView2: View {
         
         Task {
             await aiService.sendMessage(message)
+        }
+    }
+}
+
+// Selectable message bubble for Chat 2
+struct MessageBubble2: View {
+    let message: ChatMessage
+    @State private var showCopyButton = false
+    @State private var copied = false
+    
+    var body: some View {
+        HStack {
+            if message.isUser {
+                Spacer(minLength: 60)
+            }
+            
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
+                ZStack(alignment: .bottomTrailing) {
+                    MarkdownText(markdown: message.content, isUser: message.isUser)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            message.isUser
+                                ? Color.blue
+                                : Color(NSColor.controlBackgroundColor)
+                        )
+                        .cornerRadius(18)
+                        .onHover { hovering in
+                            if !message.isUser {
+                                showCopyButton = hovering
+                            }
+                        }
+                    
+                    if !message.isUser && showCopyButton {
+                        CopyButton2(text: message.content, copied: $copied)
+                            .padding(8)
+                    }
+                }
+                
+                Text(message.timestamp, style: .time)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+            }
+            
+            if !message.isUser {
+                Spacer(minLength: 60)
+            }
+        }
+    }
+}
+
+
+// Copy button component for Chat 2
+struct CopyButton2: View {
+    let text: String
+    @Binding var copied: Bool
+    @State private var hovered = false
+    
+    var body: some View {
+        Button(action: {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                copied = false
+            }
+        }) {
+            HStack(spacing: 4) {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11))
+                Text(copied ? "Copied!" : "Copy")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(copied ? .green : (hovered ? .blue : .secondary))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(NSColor.windowBackgroundColor))
+                    .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            hovered = hovering
         }
     }
 }

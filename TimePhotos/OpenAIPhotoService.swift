@@ -384,12 +384,73 @@ class OpenAIPhotoService: ObservableObject {
         context += "\n"
         
         // Year-by-year breakdown (ALL items)
+        // NOTE: allPhotos contains both monthly entries AND yearly totals (month: nil)
+        // We need to use ONLY the yearly totals to avoid double-counting
         context += "=== YEAR-BY-YEAR BREAKDOWN (ALL ITEMS) ===\n"
         for year in years.suffix(10) { // Last 10 years
-            let yearAssets = allPhotos.filter { $0.year == year }
-            let totalYearItems = yearAssets.reduce(0) { $0 + $1.assets.count }
+            // Get only the yearly total entry (month == nil) to avoid double-counting
+            let yearTotalEntry = allPhotos.first { $0.year == year && $0.month == nil }
             
-            // Count by type for this year
+            guard let yearEntry = yearTotalEntry else {
+                // Fallback: if no yearly total exists, use monthly entries but deduplicate
+                let monthlyEntries = allPhotos.filter { $0.year == year && $0.month != nil }
+                var uniqueAssetsForYear: Set<String> = []
+                var yearImageCount = 0
+                var yearPhotoCount = 0
+                var yearVideoCount = 0
+                var yearFavorites = 0
+                var yearLivePhotos = 0
+                var yearPortraits = 0
+                var yearScreenshots = 0
+                
+                for (_, _, assets) in monthlyEntries {
+                    for asset in assets {
+                        if !uniqueAssetsForYear.contains(asset.localIdentifier) {
+                            uniqueAssetsForYear.insert(asset.localIdentifier)
+                            
+                            if asset.mediaType == .image {
+                                yearImageCount += 1
+                                let isLivePhoto = asset.mediaSubtypes.contains(.photoLive)
+                                let isScreenshot = asset.mediaSubtypes.contains(.photoScreenshot)
+                                let isPanorama = asset.mediaSubtypes.contains(.photoPanorama)
+                                let isPortrait = asset.mediaSubtypes.contains(.photoDepthEffect)
+                                
+                                if !isLivePhoto && !isScreenshot && !isPanorama && !isPortrait {
+                                    yearPhotoCount += 1
+                                }
+                            } else if asset.mediaType == .video {
+                                yearVideoCount += 1
+                            }
+                            if asset.isFavorite { yearFavorites += 1 }
+                            if asset.mediaSubtypes.contains(.photoLive) { yearLivePhotos += 1 }
+                            if asset.mediaSubtypes.contains(.photoDepthEffect) { yearPortraits += 1 }
+                            if asset.mediaSubtypes.contains(.photoScreenshot) { yearScreenshots += 1 }
+                        }
+                    }
+                }
+                
+                let totalYearItems = uniqueAssetsForYear.count
+                context += "- \(year): \(totalYearItems) total items"
+                context += " (\(yearImageCount) images: \(yearPhotoCount) photos"
+                if yearLivePhotos > 0 {
+                    context += ", \(yearLivePhotos) live photos"
+                }
+                if yearPortraits > 0 {
+                    context += ", \(yearPortraits) portraits"
+                }
+                if yearScreenshots > 0 {
+                    context += ", \(yearScreenshots) screenshots"
+                }
+                context += "; \(yearVideoCount) videos)"
+                if yearFavorites > 0 { context += ", \(yearFavorites) favorites" }
+                context += "\n"
+                continue
+            }
+            
+            // Use the yearly total entry (already deduplicated)
+            let totalYearItems = yearEntry.assets.count
+            
+            // Count by type for this year (using deduplicated yearly total)
             var yearImageCount = 0
             var yearPhotoCount = 0  // Regular photos (not live photos, screenshots, etc.)
             var yearVideoCount = 0
@@ -398,28 +459,26 @@ class OpenAIPhotoService: ObservableObject {
             var yearPortraits = 0
             var yearScreenshots = 0
             
-            for (_, _, assets) in yearAssets {
-                for asset in assets {
-                    if asset.mediaType == .image {
-                        yearImageCount += 1
-                        
-                        // Count regular photos (images that are NOT special types)
-                        let isLivePhoto = asset.mediaSubtypes.contains(.photoLive)
-                        let isScreenshot = asset.mediaSubtypes.contains(.photoScreenshot)
-                        let isPanorama = asset.mediaSubtypes.contains(.photoPanorama)
-                        let isPortrait = asset.mediaSubtypes.contains(.photoDepthEffect)
-                        
-                        if !isLivePhoto && !isScreenshot && !isPanorama && !isPortrait {
-                            yearPhotoCount += 1
-                        }
-                    } else if asset.mediaType == .video {
-                        yearVideoCount += 1
+            for asset in yearEntry.assets {
+                if asset.mediaType == .image {
+                    yearImageCount += 1
+                    
+                    // Count regular photos (images that are NOT special types)
+                    let isLivePhoto = asset.mediaSubtypes.contains(.photoLive)
+                    let isScreenshot = asset.mediaSubtypes.contains(.photoScreenshot)
+                    let isPanorama = asset.mediaSubtypes.contains(.photoPanorama)
+                    let isPortrait = asset.mediaSubtypes.contains(.photoDepthEffect)
+                    
+                    if !isLivePhoto && !isScreenshot && !isPanorama && !isPortrait {
+                        yearPhotoCount += 1
                     }
-                    if asset.isFavorite { yearFavorites += 1 }
-                    if asset.mediaSubtypes.contains(.photoLive) { yearLivePhotos += 1 }
-                    if asset.mediaSubtypes.contains(.photoDepthEffect) { yearPortraits += 1 }
-                    if asset.mediaSubtypes.contains(.photoScreenshot) { yearScreenshots += 1 }
+                } else if asset.mediaType == .video {
+                    yearVideoCount += 1
                 }
+                if asset.isFavorite { yearFavorites += 1 }
+                if asset.mediaSubtypes.contains(.photoLive) { yearLivePhotos += 1 }
+                if asset.mediaSubtypes.contains(.photoDepthEffect) { yearPortraits += 1 }
+                if asset.mediaSubtypes.contains(.photoScreenshot) { yearScreenshots += 1 }
             }
             
             context += "- \(year): \(totalYearItems) total items"

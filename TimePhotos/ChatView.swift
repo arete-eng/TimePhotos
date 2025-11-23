@@ -144,6 +144,8 @@ struct ChatView: View {
 
 struct MessageBubble: View {
     let message: ChatMessage
+    @State private var showCopyButton = false
+    @State private var copied = false
     
     var body: some View {
         HStack {
@@ -152,17 +154,27 @@ struct MessageBubble: View {
             }
             
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
-                    .font(.system(size: 14))
-                    .foregroundColor(message.isUser ? .white : .primary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        message.isUser
-                            ? Color.blue
-                            : Color(NSColor.controlBackgroundColor)
-                    )
-                    .cornerRadius(18)
+                ZStack(alignment: .bottomTrailing) {
+                    MarkdownText(markdown: message.content, isUser: message.isUser)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            message.isUser
+                                ? Color.blue
+                                : Color(NSColor.controlBackgroundColor)
+                        )
+                        .cornerRadius(18)
+                        .onHover { hovering in
+                            if !message.isUser {
+                                showCopyButton = hovering
+                            }
+                        }
+                    
+                    if !message.isUser && showCopyButton {
+                        CopyButton(text: message.content, copied: $copied)
+                            .padding(8)
+                    }
+                }
                 
                 Text(message.timestamp, style: .time)
                     .font(.system(size: 10))
@@ -172,6 +184,46 @@ struct MessageBubble: View {
             if !message.isUser {
                 Spacer(minLength: 60)
             }
+        }
+    }
+}
+
+
+// Copy button component
+struct CopyButton: View {
+    let text: String
+    @Binding var copied: Bool
+    @State private var hovered = false
+    
+    var body: some View {
+        Button(action: {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                copied = false
+            }
+        }) {
+            HStack(spacing: 4) {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11))
+                Text(copied ? "Copied!" : "Copy")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(copied ? .green : (hovered ? .blue : .secondary))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(NSColor.windowBackgroundColor))
+                    .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            hovered = hovering
         }
     }
 }
